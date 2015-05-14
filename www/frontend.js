@@ -11,7 +11,7 @@ win.append = function ( text ) {
 };
 
 win.message = function ( user, message ) {
-    return win.append( "<b>" + ( user.name || user.id ) + ' : ' + "</b>" + message );
+    return win.append( ( user.id || user.name ) + ' : ' + message );
 };
 
 win.log = function ( message ) {
@@ -25,6 +25,16 @@ var win = require( './chat-window' );
 var io = require( './io' );
 
 win.log( 'Connected' );
+
+Object.observe(User.s, function( changes ){
+    changes.forEach(function( change ){
+        if(change.type || change.name === undefined)
+            win.message(update, name, change.oldValue);
+        else
+            win.message(change.type, change.name, change.oldValue);
+    });
+});
+
 
 io.on( 'chat.message', function ( id, msg ) {
     var user = User.s[ id ];
@@ -47,18 +57,14 @@ jquery( '#send-message' ).on( 'click', function ( e ) {
 });
 
 jquery( '#name' ).on( 'change', function ( e ) {
-    var $msg = jquery( '#name' );
-    var message = $msg.val();
-    io.emit( 'alter.name', function(id){
-        //var user = User.s[ id ];
-        var $name = jquery( '#name' );
-        User.s[ id ].setName( $name.val() );
-    });
-    // limpar a input
-    $msg.val('');
+    var $name = jquery( '#name' );
+    var name = $name.val();
 
-    // enviar
-    //io.emit( 'chat.message', message );
+    // limpar a input
+    $name.val('');
+
+    //envia
+    io.emit( 'alter.name', name );
 
     // do not do anything stupid
     e.preventDefault();
@@ -67,11 +73,11 @@ jquery( '#name' ).on( 'change', function ( e ) {
 //alter name
 
 User.s.on( 'registered', function ( user ) {
-    win.log( ( user.name || user.id ) + ' is now connected' );
+    win.log( (  user.id || user.name ) + ' is now connected' );
 });
 
 User.s.on( 'unregistered', function ( user ) {
-    win.log( ( user.name || user.id ) + ' is now disconnected' );
+    win.log( ( user.id || user.name ) + ' is now disconnected' );
 });
 
 },{"./chat-window":1,"./io":3,"./user":4,"jquery":7}],3:[function(require,module,exports){
