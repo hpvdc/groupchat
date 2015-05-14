@@ -11,7 +11,7 @@ win.append = function ( text ) {
 };
 
 win.message = function ( user, message ) {
-    return win.append( ( user.name || user.id ) + ' : ' + message );
+    return win.append( "<b>" + ( user.name || user.id ) + ' : ' + "</b>" + message );
 };
 
 win.log = function ( message ) {
@@ -42,9 +42,29 @@ jquery( '#send-message' ).on( 'click', function ( e ) {
     // enviar
     io.emit( 'chat.message', message );
 
-    // do not do anything supid
+    // do not do anything stupid
     e.preventDefault();
 });
+
+jquery( '#name' ).on( 'change', function ( e ) {
+    var $msg = jquery( '#name' );
+    var message = $msg.val();
+    io.emit( 'alter.name', function(id){
+        //var user = User.s[ id ];
+        var $name = jquery( '#name' );
+        User.s[ id ].setName( $name.val() );
+    });
+    // limpar a input
+    $msg.val('');
+
+    // enviar
+    //io.emit( 'chat.message', message );
+
+    // do not do anything stupid
+    e.preventDefault();
+});
+
+//alter name
 
 User.s.on( 'registered', function ( user ) {
     win.log( ( user.name || user.id ) + ' is now connected' );
@@ -61,6 +81,7 @@ var io = SocketIO({
     path: '/io',
     reconnect: true
 });
+
 
 module.exports = io;
 
@@ -87,6 +108,10 @@ var EventEmitter = require( 'events' ).EventEmitter;
 function User ( id ) {
     this.id = id;
 }
+
+User.prototype.setName = function (name){
+    this.name=name;
+};
 
 User.prototype = Object.create( EventEmitter.prototype );
 
