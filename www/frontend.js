@@ -19,52 +19,47 @@ win.log = function ( message ) {
 };
 
 },{}],2:[function(require,module,exports){
-var jquery = require( 'jquery' );
-var User = require( './user' );
-var win = require( './chat-window' );
-var io = require( './io' );
+var jquery = require('jquery');
+var User = require('./user');
+var win = require('./chat-window');
+var io = require('./io');
+var Util = require('findhit-util');
+var debug = require( 'debug' )( 'groupchat:frontend:chat' );
+win.log('Connected');
 
-win.log( 'Connected' );
 
-Object.observe(User.s, function( changes ){
-    changes.forEach(function( change ){
-        if(change.type || change.name === undefined)
-            win.message(update, name, change.oldValue);
-        else
-            win.message(change.type, change.name, change.oldValue);
-    });
+
+io.on('chat.message', function(id, msg) {
+    var user = User.s[id];
+    win.message(user, msg);
+    debug('from: ',user,'message: ',msg);
 });
 
-
-io.on( 'chat.message', function ( id, msg ) {
-    var user = User.s[ id ];
-    win.message( user, msg );
-});
 
 // send message
-jquery( '#send-message' ).on( 'click', function ( e ) {
-    var $msg = jquery( '#message' );
+jquery('#send-message').on('click', function(e) {
+    var $msg = jquery('#message');
     var message = $msg.val();
 
     // limpar a input
     $msg.val('');
 
     // enviar
-    io.emit( 'chat.message', message );
+    io.emit('chat.message', message);
 
     // do not do anything stupid
     e.preventDefault();
 });
 
-jquery( '#name' ).on( 'change', function ( e ) {
-    var $name = jquery( '#name' );
+jquery('#name').on('change', function(e) {
+    var $name = jquery('#name');
     var name = $name.val();
 
     // limpar a input
     $name.val('');
 
     //envia
-    io.emit( 'alter.name', name );
+    io.emit('alter.name', name);
 
     // do not do anything stupid
     e.preventDefault();
@@ -72,15 +67,15 @@ jquery( '#name' ).on( 'change', function ( e ) {
 
 //alter name
 
-User.s.on( 'registered', function ( user ) {
-    win.log( (  user.id || user.name ) + ' is now connected' );
+User.s.on('registered', function(user) {
+    win.log((user.name || user.id) + ' is now connected');
 });
 
-User.s.on( 'unregistered', function ( user ) {
-    win.log( ( user.id || user.name ) + ' is now disconnected' );
+User.s.on('unregistered', function(user) {
+    win.log((user.name || user.id) + ' is now disconnected');
 });
 
-},{"./chat-window":1,"./io":3,"./user":4,"jquery":7}],3:[function(require,module,exports){
+},{"./chat-window":1,"./io":3,"./user":4,"debug":7,"findhit-util":10,"jquery":23}],3:[function(require,module,exports){
 var SocketIO = require( 'socket.io-client' );
 
 var io = SocketIO({
@@ -91,9 +86,22 @@ var io = SocketIO({
 
 module.exports = io;
 
-},{"socket.io-client":8}],4:[function(require,module,exports){
+},{"socket.io-client":24}],4:[function(require,module,exports){
 var User = require( '../../shared/user' );
 var io = require( './io' );
+var debug = require( 'debug' )( 'groupchat:frontend:user' );
+
+
+Object.observe(User.s, function( changes ){
+    changes.forEach(function( change ){
+        /*
+        if(change.type || change.name === undefined)
+            win.message(update, name, change.oldValue);
+        else
+        */
+        win.message(change.type, change.name, change.oldValue);
+    });
+});
 
 io.on( 'user.register', function ( id ) {
     var user = new User( id );
@@ -108,9 +116,9 @@ io.on( 'user.unregister', function ( id ) {
 
 module.exports = User;
 
-},{"../../shared/user":5,"./io":3}],5:[function(require,module,exports){
+},{"../../shared/user":5,"./io":3,"debug":7}],5:[function(require,module,exports){
 var EventEmitter = require( 'events' ).EventEmitter;
-
+var debug = require( 'debug' )( 'groupchat:shared:user' );
 function User ( id ) {
     this.id = id;
 }
@@ -124,9 +132,13 @@ User.prototype = Object.create( EventEmitter.prototype );
 User.s = Object.create( EventEmitter.prototype );
 
 User.prototype.register = function(){
-    User.s[ this.id ] = this;
+    User.s[ this.id ] = this.id;
+
+    User.s[ this.id ].id = this.id;
+    //console.log( 'registado user: ' + User.s[ this.id ] );
     User.s.emit( 'registered', this );
     this.emit( 'registered', this );
+    console.log('length: ',Object.keys(User.s).length);
 };
 
 User.prototype.unregister = function(){
@@ -137,7 +149,7 @@ User.prototype.unregister = function(){
 
 module.exports = User;
 
-},{"events":6}],6:[function(require,module,exports){
+},{"debug":7,"events":6}],6:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -441,6 +453,1403 @@ function isUndefined(arg) {
 }
 
 },{}],7:[function(require,module,exports){
+
+/**
+ * This is the web browser implementation of `debug()`.
+ *
+ * Expose `debug()` as the module.
+ */
+
+exports = module.exports = require('./debug');
+exports.log = log;
+exports.formatArgs = formatArgs;
+exports.save = save;
+exports.load = load;
+exports.useColors = useColors;
+exports.storage = 'undefined' != typeof chrome
+               && 'undefined' != typeof chrome.storage
+                  ? chrome.storage.local
+                  : localstorage();
+
+/**
+ * Colors.
+ */
+
+exports.colors = [
+  'lightseagreen',
+  'forestgreen',
+  'goldenrod',
+  'dodgerblue',
+  'darkorchid',
+  'crimson'
+];
+
+/**
+ * Currently only WebKit-based Web Inspectors, Firefox >= v31,
+ * and the Firebug extension (any Firefox version) are known
+ * to support "%c" CSS customizations.
+ *
+ * TODO: add a `localStorage` variable to explicitly enable/disable colors
+ */
+
+function useColors() {
+  // is webkit? http://stackoverflow.com/a/16459606/376773
+  return ('WebkitAppearance' in document.documentElement.style) ||
+    // is firebug? http://stackoverflow.com/a/398120/376773
+    (window.console && (console.firebug || (console.exception && console.table))) ||
+    // is firefox >= v31?
+    // https://developer.mozilla.org/en-US/docs/Tools/Web_Console#Styling_messages
+    (navigator.userAgent.toLowerCase().match(/firefox\/(\d+)/) && parseInt(RegExp.$1, 10) >= 31);
+}
+
+/**
+ * Map %j to `JSON.stringify()`, since no Web Inspectors do that by default.
+ */
+
+exports.formatters.j = function(v) {
+  return JSON.stringify(v);
+};
+
+
+/**
+ * Colorize log arguments if enabled.
+ *
+ * @api public
+ */
+
+function formatArgs() {
+  var args = arguments;
+  var useColors = this.useColors;
+
+  args[0] = (useColors ? '%c' : '')
+    + this.namespace
+    + (useColors ? ' %c' : ' ')
+    + args[0]
+    + (useColors ? '%c ' : ' ')
+    + '+' + exports.humanize(this.diff);
+
+  if (!useColors) return args;
+
+  var c = 'color: ' + this.color;
+  args = [args[0], c, 'color: inherit'].concat(Array.prototype.slice.call(args, 1));
+
+  // the final "%c" is somewhat tricky, because there could be other
+  // arguments passed either before or after the %c, so we need to
+  // figure out the correct index to insert the CSS into
+  var index = 0;
+  var lastC = 0;
+  args[0].replace(/%[a-z%]/g, function(match) {
+    if ('%%' === match) return;
+    index++;
+    if ('%c' === match) {
+      // we only are interested in the *last* %c
+      // (the user may have provided their own)
+      lastC = index;
+    }
+  });
+
+  args.splice(lastC, 0, c);
+  return args;
+}
+
+/**
+ * Invokes `console.log()` when available.
+ * No-op when `console.log` is not a "function".
+ *
+ * @api public
+ */
+
+function log() {
+  // this hackery is required for IE8/9, where
+  // the `console.log` function doesn't have 'apply'
+  return 'object' === typeof console
+    && console.log
+    && Function.prototype.apply.call(console.log, console, arguments);
+}
+
+/**
+ * Save `namespaces`.
+ *
+ * @param {String} namespaces
+ * @api private
+ */
+
+function save(namespaces) {
+  try {
+    if (null == namespaces) {
+      exports.storage.removeItem('debug');
+    } else {
+      exports.storage.debug = namespaces;
+    }
+  } catch(e) {}
+}
+
+/**
+ * Load `namespaces`.
+ *
+ * @return {String} returns the previously persisted debug modes
+ * @api private
+ */
+
+function load() {
+  var r;
+  try {
+    r = exports.storage.debug;
+  } catch(e) {}
+  return r;
+}
+
+/**
+ * Enable namespaces listed in `localStorage.debug` initially.
+ */
+
+exports.enable(load());
+
+/**
+ * Localstorage attempts to return the localstorage.
+ *
+ * This is necessary because safari throws
+ * when a user disables cookies/localstorage
+ * and you attempt to access it.
+ *
+ * @return {LocalStorage}
+ * @api private
+ */
+
+function localstorage(){
+  try {
+    return window.localStorage;
+  } catch (e) {}
+}
+
+},{"./debug":8}],8:[function(require,module,exports){
+
+/**
+ * This is the common logic for both the Node.js and web browser
+ * implementations of `debug()`.
+ *
+ * Expose `debug()` as the module.
+ */
+
+exports = module.exports = debug;
+exports.coerce = coerce;
+exports.disable = disable;
+exports.enable = enable;
+exports.enabled = enabled;
+exports.humanize = require('ms');
+
+/**
+ * The currently active debug mode names, and names to skip.
+ */
+
+exports.names = [];
+exports.skips = [];
+
+/**
+ * Map of special "%n" handling functions, for the debug "format" argument.
+ *
+ * Valid key names are a single, lowercased letter, i.e. "n".
+ */
+
+exports.formatters = {};
+
+/**
+ * Previously assigned color.
+ */
+
+var prevColor = 0;
+
+/**
+ * Previous log timestamp.
+ */
+
+var prevTime;
+
+/**
+ * Select a color.
+ *
+ * @return {Number}
+ * @api private
+ */
+
+function selectColor() {
+  return exports.colors[prevColor++ % exports.colors.length];
+}
+
+/**
+ * Create a debugger with the given `namespace`.
+ *
+ * @param {String} namespace
+ * @return {Function}
+ * @api public
+ */
+
+function debug(namespace) {
+
+  // define the `disabled` version
+  function disabled() {
+  }
+  disabled.enabled = false;
+
+  // define the `enabled` version
+  function enabled() {
+
+    var self = enabled;
+
+    // set `diff` timestamp
+    var curr = +new Date();
+    var ms = curr - (prevTime || curr);
+    self.diff = ms;
+    self.prev = prevTime;
+    self.curr = curr;
+    prevTime = curr;
+
+    // add the `color` if not set
+    if (null == self.useColors) self.useColors = exports.useColors();
+    if (null == self.color && self.useColors) self.color = selectColor();
+
+    var args = Array.prototype.slice.call(arguments);
+
+    args[0] = exports.coerce(args[0]);
+
+    if ('string' !== typeof args[0]) {
+      // anything else let's inspect with %o
+      args = ['%o'].concat(args);
+    }
+
+    // apply any `formatters` transformations
+    var index = 0;
+    args[0] = args[0].replace(/%([a-z%])/g, function(match, format) {
+      // if we encounter an escaped % then don't increase the array index
+      if (match === '%%') return match;
+      index++;
+      var formatter = exports.formatters[format];
+      if ('function' === typeof formatter) {
+        var val = args[index];
+        match = formatter.call(self, val);
+
+        // now we need to remove `args[index]` since it's inlined in the `format`
+        args.splice(index, 1);
+        index--;
+      }
+      return match;
+    });
+
+    if ('function' === typeof exports.formatArgs) {
+      args = exports.formatArgs.apply(self, args);
+    }
+    var logFn = enabled.log || exports.log || console.log.bind(console);
+    logFn.apply(self, args);
+  }
+  enabled.enabled = true;
+
+  var fn = exports.enabled(namespace) ? enabled : disabled;
+
+  fn.namespace = namespace;
+
+  return fn;
+}
+
+/**
+ * Enables a debug mode by namespaces. This can include modes
+ * separated by a colon and wildcards.
+ *
+ * @param {String} namespaces
+ * @api public
+ */
+
+function enable(namespaces) {
+  exports.save(namespaces);
+
+  var split = (namespaces || '').split(/[\s,]+/);
+  var len = split.length;
+
+  for (var i = 0; i < len; i++) {
+    if (!split[i]) continue; // ignore empty strings
+    namespaces = split[i].replace(/\*/g, '.*?');
+    if (namespaces[0] === '-') {
+      exports.skips.push(new RegExp('^' + namespaces.substr(1) + '$'));
+    } else {
+      exports.names.push(new RegExp('^' + namespaces + '$'));
+    }
+  }
+}
+
+/**
+ * Disable debug output.
+ *
+ * @api public
+ */
+
+function disable() {
+  exports.enable('');
+}
+
+/**
+ * Returns true if the given mode name is enabled, false otherwise.
+ *
+ * @param {String} name
+ * @return {Boolean}
+ * @api public
+ */
+
+function enabled(name) {
+  var i, len;
+  for (i = 0, len = exports.skips.length; i < len; i++) {
+    if (exports.skips[i].test(name)) {
+      return false;
+    }
+  }
+  for (i = 0, len = exports.names.length; i < len; i++) {
+    if (exports.names[i].test(name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Coerce `val`.
+ *
+ * @param {Mixed} val
+ * @return {Mixed}
+ * @api private
+ */
+
+function coerce(val) {
+  if (val instanceof Error) return val.stack || val.message;
+  return val;
+}
+
+},{"ms":9}],9:[function(require,module,exports){
+/**
+ * Helpers.
+ */
+
+var s = 1000;
+var m = s * 60;
+var h = m * 60;
+var d = h * 24;
+var y = d * 365.25;
+
+/**
+ * Parse or format the given `val`.
+ *
+ * Options:
+ *
+ *  - `long` verbose formatting [false]
+ *
+ * @param {String|Number} val
+ * @param {Object} options
+ * @return {String|Number}
+ * @api public
+ */
+
+module.exports = function(val, options){
+  options = options || {};
+  if ('string' == typeof val) return parse(val);
+  return options.long
+    ? long(val)
+    : short(val);
+};
+
+/**
+ * Parse the given `str` and return milliseconds.
+ *
+ * @param {String} str
+ * @return {Number}
+ * @api private
+ */
+
+function parse(str) {
+  str = '' + str;
+  if (str.length > 10000) return;
+  var match = /^((?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|years?|yrs?|y)?$/i.exec(str);
+  if (!match) return;
+  var n = parseFloat(match[1]);
+  var type = (match[2] || 'ms').toLowerCase();
+  switch (type) {
+    case 'years':
+    case 'year':
+    case 'yrs':
+    case 'yr':
+    case 'y':
+      return n * y;
+    case 'days':
+    case 'day':
+    case 'd':
+      return n * d;
+    case 'hours':
+    case 'hour':
+    case 'hrs':
+    case 'hr':
+    case 'h':
+      return n * h;
+    case 'minutes':
+    case 'minute':
+    case 'mins':
+    case 'min':
+    case 'm':
+      return n * m;
+    case 'seconds':
+    case 'second':
+    case 'secs':
+    case 'sec':
+    case 's':
+      return n * s;
+    case 'milliseconds':
+    case 'millisecond':
+    case 'msecs':
+    case 'msec':
+    case 'ms':
+      return n;
+  }
+}
+
+/**
+ * Short format for `ms`.
+ *
+ * @param {Number} ms
+ * @return {String}
+ * @api private
+ */
+
+function short(ms) {
+  if (ms >= d) return Math.round(ms / d) + 'd';
+  if (ms >= h) return Math.round(ms / h) + 'h';
+  if (ms >= m) return Math.round(ms / m) + 'm';
+  if (ms >= s) return Math.round(ms / s) + 's';
+  return ms + 'ms';
+}
+
+/**
+ * Long format for `ms`.
+ *
+ * @param {Number} ms
+ * @return {String}
+ * @api private
+ */
+
+function long(ms) {
+  return plural(ms, d, 'day')
+    || plural(ms, h, 'hour')
+    || plural(ms, m, 'minute')
+    || plural(ms, s, 'second')
+    || ms + ' ms';
+}
+
+/**
+ * Pluralization helper.
+ */
+
+function plural(ms, n, name) {
+  if (ms < n) return;
+  if (ms < n * 1.5) return Math.floor(ms / n) + ' ' + name;
+  return Math.ceil(ms / n) + ' ' + name + 's';
+}
+
+},{}],10:[function(require,module,exports){
+/**
+  The entry point.
+  @module ƒ
+**/
+'use strict';
+
+/**
+ * To use it, you just need to import it:
+ *
+ * ```js
+ * var ƒ = require('findhit-util');
+ * // OR
+ * var Util = require('findhit-util');
+ * ```
+ *
+ *
+ * @class ƒ
+ */
+
+var ƒ = {};
+
+require('./lib/core')( ƒ );
+require('./lib/isisnt')( ƒ );
+require('./lib/from')( ƒ );
+require('./lib/to')( ƒ );
+
+// Load utils by type
+require('./lib/type/array')( ƒ );
+require('./lib/type/function')( ƒ );
+require('./lib/type/object')( ƒ );
+require('./lib/type/string')( ƒ );
+require('./lib/type/regexp')( ƒ );
+require('./lib/type/date')( ƒ );
+
+// Export it
+module.exports = ƒ;
+
+// TODO: AMDify
+
+},{"./lib/core":11,"./lib/from":12,"./lib/isisnt":13,"./lib/to":14,"./lib/type/array":15,"./lib/type/date":16,"./lib/type/function":17,"./lib/type/object":18,"./lib/type/regexp":20,"./lib/type/string":22}],11:[function(require,module,exports){
+module.exports = (function ( ƒ ){
+
+	ƒ.uniqId = function () {
+		return Math.floor( Math.random() * 11 ) +''+ Math.floor( Math.random() * 1000000 );
+	};
+
+	ƒ.uuid = (function() {
+		var s4 = function () {
+			return Math.floor((1 + Math.random()) * 0x10000)
+				.toString(16)
+				.substring(1);
+		}
+
+		return function() {
+			return s4() + s4() + '-' + s4() + '-' + s4() + '-' +
+			s4() + '-' + s4() + s4() + s4();
+		};
+	})();
+
+	ƒ.forEach = ƒ.each = function ( o, fn, context ) {
+
+		if( ƒ.is.Array( o ) ) {
+			return ƒ.Array.each.apply( null, arguments );
+		}
+
+		if( ƒ.is.Object( o ) ) {
+			return ƒ.Object.each.apply( null, arguments );
+		}
+
+		return false;
+	};
+
+	ƒ.map = function ( o, fn, context ) {
+
+		if ( ƒ.isnt.Function( fn ) ) {
+			throw new TypeError("fn must be a function");
+		}
+
+		if( ƒ.is.Array( o ) ) {
+			return ƒ.Array.map.apply( null, arguments );
+		}
+
+		if( ƒ.is.Object( o ) ) {
+			return ƒ.Object.map.apply( null, arguments );
+		}
+
+		return false;
+	};
+
+	ƒ.filter = function ( o, fn, context ) {
+
+		if ( ƒ.isnt.Function( fn ) ) {
+			throw new TypeError("fn must be a function");
+		}
+
+		if( ƒ.is.Array( o ) ) {
+			return ƒ.Array.filter.apply( null, arguments );
+		}
+
+		if( ƒ.is.Object( o ) ) {
+			return ƒ.Object.filter.apply( null, arguments );
+		}
+
+		return false;
+	};
+
+	ƒ.clone = function ( obj ) {
+		var clone = {};
+		clone.constructor = obj.constructor;
+		clone.prototype = obj.prototype;
+		return ƒ.extend( clone, obj );
+	};
+
+	ƒ.extend = function ( target ) {
+		var srcs,
+			r = false,
+			i, j, len, src;
+
+		if ( target === true){
+			target = arguments[1];
+			r = true;
+			srcs = Array.prototype.slice.call(arguments, 2);
+		} else {
+			srcs = Array.prototype.slice.call(arguments, 1);
+		}
+
+		for ( j = 0, len = srcs.length; j < len; j++ ) {
+			src = srcs[j];
+			for ( i in src ) {
+				if ( r && typeof target[i] == 'object' )
+					this.extend( target[i], src[i] );
+				else
+					target[i] = src[i];
+			}
+		}
+		return target;
+	};
+
+	ƒ.slice = function ( target, start, end ) {
+
+		if ( ƒ.is.Function( target.slice ) ) {
+			return target.slice( start, end );
+		}
+
+		if ( ƒ.is.Object( target ) ) {
+			var keys = Object.keys( target ).slice( start, end );
+
+			return ƒ.filter( target, function ( value, key ) {
+				return keys.indexOf( key ) !== -1;
+			});
+		}
+
+		return [];
+	};
+
+	ƒ.stamp = (function () {
+		var last_id = 0;
+
+		return function ( obj ) {
+			obj._id = obj._id || ++last_id;
+			return obj._id;
+		};
+	})();
+
+	ƒ.log = console.log;
+
+});
+
+},{}],12:[function(require,module,exports){
+module.exports = (function ( ƒ ){
+	var from = ƒ.from = {};
+
+	from.string = from.String = function ( string ) {
+		if( ƒ.isnt.string( string ) ) {
+			throw new TypeError("string should be string");
+		}
+
+		if( string == 'undefined' ) return undefined;
+		if( string == 'null' ) return null;
+		if( string == 'true' ) return true;
+		if( string == 'false' ) return false;
+		if( ƒ.is.number( string ) ) return parseInt( string );
+		if( ƒ.is.json( string ) ) return JSON.parse( string );
+
+		return string;
+	};
+
+});
+
+},{}],13:[function(require,module,exports){
+module.exports = (function ( ƒ ){
+
+	// For internal API
+	ƒ.isisnt = ƒ.IsIsnt = {};
+
+	ƒ.is = ƒ.Is = {};
+	ƒ.isnt = ƒ.Isnt = {};
+
+	ƒ.is.instanceof = function ( ClassToEval, instance ) {
+		return instance && instance.constructor ? instance.constructor === ClassToEval : instance instanceof ClassToEval;
+	};
+	ƒ.isnt.instanceof = function ( ClassToEval, instance ) {
+		return instance && instance.constructor ? instance.constructor !== ClassToEval : ! ( instance instanceof ClassToEval );
+	};
+
+	var register = ƒ.IsIsnt.register = function ( ClassToEval, keys ) {
+			if( ! ClassToEval ) return;
+
+			var isFn = function ( instance ) {
+					return ƒ.is.instanceof( ClassToEval, instance );
+				},
+				isntFn = function ( instance ) {
+					return ƒ.isnt.instanceof( ClassToEval, instance );
+				};
+
+			if( typeof keys !== 'object' ) {
+				keys = [ keys ];
+			}
+
+			keys.forEach(function ( key ) {
+				ƒ.is[ key ] = isFn;
+				ƒ.isnt[ key ] = isntFn;
+			});
+		},
+		registerCustom = ƒ.IsIsnt.registerCustom = function ( keys, isFn, isntFn ) {
+
+			if( ƒ.isnt.function( isFn ) ) {
+				throw new TypeError("isFn must be a function");
+			}
+
+			if( ƒ.isnt.function( isntFn ) ) {
+				isntFn = function ( instance ) {
+					return ! isFn( instance );
+				};
+			}
+
+			if( typeof keys !== 'object' ) {
+				keys = [ keys ];
+			}
+
+			keys.forEach(function ( key ) {
+				ƒ.is[ key ] = isFn;
+				ƒ.isnt[ key ] = isntFn;
+			});
+
+		};
+
+	// Default Javascript Classes
+	register( Function, [ 'Function', 'function' ] );
+	register( Array, [ 'Array', 'array' ] );
+	register( Object, [ 'Object', 'object' ] );
+	register( String, [ 'String', 'string' ] );
+	register( Error, [ 'Error', 'error' ] );
+	register( RegExp, [ 'RegExp', 'Regexp', 'regExp', 'regexp' ] );
+
+	// Default Browser Classes
+	if( typeof HTMLElement !== 'undefined' ) {
+		register( HTMLElement, [ 'HTMLElement', 'HTMLelement' ] );
+	}
+
+	// Custom evaluators
+	registerCustom( [ 'numeric', 'number', 'Number' ], function ( variable ) {
+
+		// Parse it to a number if it isn't
+		variable = typeof variable === 'number' ? variable : parseInt( variable );
+
+		// We don't want to tell that "Not a Number" is a Number...
+		return ! isNaN( variable );
+	});
+	registerCustom( [ 'undefined', 'Undefined', 'notDefined', 'notdefined' ], function ( variable ) {
+		return typeof variable === 'undefined';
+	});
+	registerCustom( [ 'ok', 'true' ], function ( variable ) {
+		return variable === true;
+	});
+	registerCustom( [ 'bad', 'false' ], function ( variable ) {
+		return variable === false;
+	});
+	registerCustom( [ 'Null', 'null', 'NULL' ], function ( variable ) {
+		return variable === null;
+	});
+	registerCustom( [ 'json', 'JSON', 'Json' ], function ( variable ) {
+		if (/^[\],:{}\s]*$/
+				.test( variable
+					.replace( /\\["\\\/bfnrtu]/g, '@')
+					.replace( /"[^"\\\n\r]*"|true|false|null|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?/g, ']' )
+					.replace( /(?:^|:|,)(?:\s*\[)+/g, '' )
+				)
+			) return true;
+
+		return false;
+	});
+
+});
+
+},{}],14:[function(require,module,exports){
+module.exports = (function ( ƒ ){
+	var to = ƒ.to = {};
+
+	to.String = function ( variable ) {
+		return ( ƒ.is.string( variable ) ) ? variable : JSON.stringify( variable );
+	};
+
+});
+
+},{}],15:[function(require,module,exports){
+module.exports = (function ( ƒ ){
+	var $ = ƒ.Array = ƒ.array = {};
+
+	// is and isnt
+	$.is = ƒ.is.Array;
+	$.isnt = ƒ.isnt.Array;
+
+	$.forEach = $.each = function ( array, fn, context ) {
+
+		if ( ƒ.isnt.Array( array ) ) {
+			throw new TypeError("array must be an array");
+		}
+		if ( ƒ.isnt.Function( fn ) ) {
+			throw new TypeError("fn must be a function");
+		}
+
+		var i;
+
+		for( i=0; i < array.length; i++ ) {
+			fn.call( context || array, array[ i ], i, array );
+		}
+
+		return array;
+	};
+
+	$.map = function ( array, fn, context ) {
+
+		if ( ƒ.isnt.Function( fn ) ) {
+			throw new TypeError("fn must be a function");
+		}
+
+		var res = [], i;
+
+		ƒ.each( array, function ( v, k ) {
+			res.push(
+				fn.call( context || array, v, k, array ) || undefined
+			);
+		});
+
+		return res;
+	};
+
+	$.filter = function ( array, fn, context ) {
+
+		if ( ƒ.isnt.Array( array ) ) {
+			throw new TypeError("array must be an array");
+		}
+		if ( ƒ.isnt.Function( fn ) ) {
+			throw new TypeError("fn must be a function");
+		}
+
+		var res = [], i;
+
+		ƒ.each( array, function ( v, k ) {
+			if( fn.call( context || array, v, k, array ) ) {
+				res.push( array[ k ] );
+			}
+		});
+
+		return res;
+	};
+
+	$.randomFilter = function ( array, limit ) {
+
+		if ( ƒ.isnt.Array( array ) ) {
+			throw new TypeError("array must be an array");
+		}
+
+		if( ! parseInt( limit ) > 0 || array.length <= limit ) {
+			return array || false;
+		}
+
+		var newArray = [], i;
+
+		// Copy all the options to target
+		for( i in array ) {
+			newArray[ i ] = array[ i ];
+		}
+
+		while ( newArray.length > limit ) {
+
+			// Itenerator to decrement
+			i = Math.floor( Math.random() * newArray.length );
+
+			newArray.splice( i, 1 );
+
+		}
+
+		return newArray;
+	};
+
+	$.empty = function ( array ) {
+
+		if ( ƒ.isnt.Array( array ) ) {
+			throw new TypeError("array must be an array");
+		}
+
+		array.splice( 0, array.length );
+
+		return array;
+	};
+
+});
+
+},{}],16:[function(require,module,exports){
+module.exports = (function ( ƒ ){
+
+    var date = ƒ.Date = ƒ.date = {};
+
+    date.format = function( dateToFormat, format ) {
+
+        var returnStr = '',
+            replace = date.format.chars;
+
+        for (var i = 0; i < format.length; i++) {
+            var curChar = format.charAt(i);
+
+            if (i - 1 >= 0 && format.charAt(i - 1) == "\\")
+                returnStr += curChar;
+
+            else if (replace[curChar])
+                returnStr += replace[curChar].call(dateToFormat);
+
+            else if (curChar != "\\")
+                returnStr += curChar;
+
+        }
+
+        return returnStr;
+    };
+
+    date.format.chars = {
+		shortMonths: [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+		longMonths: [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'],
+		shortDays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+		longDays: [
+        'Sunday', 'Monday', 'Tuesday', 'Wednesday',
+        'Thursday', 'Friday', 'Saturday'],
+
+		// Day
+		d: function() { return (this.getDate() < 10 ? '0' : '') + this.getDate(); },
+		D: function() { return date.format.chars.shortDays[this.getDay()]; },
+		j: function() { return this.getDate(); },
+		l: function() { return date.format.chars.longDays[this.getDay()]; },
+		N: function() { return this.getDay() + 1; },
+		S: function() { return (this.getDate() % 10 == 1 && this.getDate() != 11 ? 'st' : (this.getDate() % 10 == 2 && this.getDate() != 12 ? 'nd' : (this.getDate() % 10 == 3 && this.getDate() != 13 ? 'rd' : 'th'))); },
+		w: function() { return this.getDay(); },
+		z: function() { var d = new Date(this.getFullYear(),0,1); return Math.ceil((this - d) / 86400000); }, // Fixed now
+		// Week
+		W: function() { var d = new Date(this.getFullYear(), 0, 1); return Math.ceil((((this - d) / 86400000) + d.getDay() + 1) / 7); }, // Fixed now
+		// Month
+		F: function() { return date.format.chars.longMonths[this.getMonth()]; },
+		m: function() { return (this.getMonth() < 9 ? '0' : '') + (this.getMonth() + 1); },
+		M: function() { return date.format.chars.shortMonths[this.getMonth()]; },
+		n: function() { return this.getMonth() + 1; },
+		t: function() { var d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 0).getDate() }, // Fixed now, gets #days of date
+		// Year
+		L: function() { var year = this.getFullYear(); return (year % 400 == 0 || (year % 100 != 0 && year % 4 == 0)); },   // Fixed now
+		o: function() { var d  = new Date(this.valueOf());  d.setDate(d.getDate() - ((this.getDay() + 6) % 7) + 3); return d.getFullYear();}, //Fixed now
+		Y: function() { return this.getFullYear(); },
+		y: function() { return ('' + this.getFullYear()).substr(2); },
+		// Time
+		a: function() { return this.getHours() < 12 ? 'am' : 'pm'; },
+		A: function() { return this.getHours() < 12 ? 'AM' : 'PM'; },
+		B: function() { return Math.floor((((this.getUTCHours() + 1) % 24) + this.getUTCMinutes() / 60 + this.getUTCSeconds() / 3600) * 1000 / 24); }, // Fixed now
+		g: function() { return this.getHours() % 12 || 12; },
+		G: function() { return this.getHours(); },
+		h: function() { return ((this.getHours() % 12 || 12) < 10 ? '0' : '') + (this.getHours() % 12 || 12); },
+		H: function() { return (this.getHours() < 10 ? '0' : '') + this.getHours(); },
+		i: function() { return (this.getMinutes() < 10 ? '0' : '') + this.getMinutes(); },
+		s: function() { return (this.getSeconds() < 10 ? '0' : '') + this.getSeconds(); },
+		u: function() { var m = this.getMilliseconds(); return (m < 10 ? '00' : (m < 100 ? '0' : '')) + m; },
+		// Timezone
+		e: function() { return "Not Yet Supported"; },
+		I: function() {
+			var DST = null;
+				for (var i = 0; i < 12; ++i) {
+						var d = new Date(this.getFullYear(), i, 1);
+						var offset = d.getTimezoneOffset();
+
+						if (DST === null) DST = offset;
+						else if (offset < DST) { DST = offset; break; }                     else if (offset > DST) break;
+				}
+				return (this.getTimezoneOffset() == DST) | 0;
+			},
+		O: function() { return (-this.getTimezoneOffset() < 0 ? '-' : '+') + (Math.abs(this.getTimezoneOffset() / 60) < 10 ? '0' : '') + (Math.abs(this.getTimezoneOffset() / 60)) + '00'; },
+		P: function() { return (-this.getTimezoneOffset() < 0 ? '-' : '+') + (Math.abs(this.getTimezoneOffset() / 60) < 10 ? '0' : '') + (Math.abs(this.getTimezoneOffset() / 60)) + ':00'; }, // Fixed now
+		T: function() { var m = this.getMonth(); this.setMonth(0); var result = this.toTimeString().replace(/^.+ \(?([^\)]+)\)?$/, '$1'); this.setMonth(m); return result;},
+		Z: function() { return -this.getTimezoneOffset() * 60; },
+		// Full Date/Time
+		c: function() { return this.format("Y-m-d\\TH:i:sP"); }, // Fixed now
+		r: function() { return this.toString(); },
+		U: function() { return this.getTime() / 1000; }
+	};
+});
+
+},{}],17:[function(require,module,exports){
+module.exports = (function ( ƒ ){
+	var fn = ƒ.Function = ƒ.function = {};
+
+	// is and isnt
+	fn.is = ƒ.is.Function;
+	fn.isnt = ƒ.isnt.Function;
+
+	// Function to be called with a fiven context
+	fn.bind = function ( fn, context ) {
+		var slice = Array.prototype.slice;
+
+		if ( fn.bind ) {
+			return fn.bind.apply( fn, slice.call( arguments, 1 ) );
+		}
+
+		var args = slice.call(arguments, 2);
+
+		return function () {
+			return fn.apply( context, args.length ? args.concat(slice.call(arguments)) : arguments );
+		};
+	};
+
+	// fn that logs all arguments passed to it
+	fn.debug = function () { console.log( arguments ); };
+
+	// fn that returns a value
+	fn.return = function ( value ) { return function () { return value; }; };
+	fn.falsify = fn.return( false );
+	fn.truthify = fn.return( true );
+	fn.nullify = fn.return( null );
+	fn.undefinify = fn.return( undefined );
+
+	// fn that returns parameters names
+	// Based on @Jack Allan's response at stackoverflow.com
+	// http://stackoverflow.com/questions/1007981/how-to-get-function-parameter-names-values-dynamically-from-javascript
+	fn.getParamNames = (function () {
+
+		// REGEX
+		var STRIP_COMMENTS = /((\/\/.*$)|(\/\*[\s\S]*?\*\/))/mg,
+			ARGUMENT_NAMES = /([^\s,]+)/g;
+
+		return function ( func ) {
+
+			var fnStr = func.toString().replace(STRIP_COMMENTS, '');
+			var result = fnStr.slice(fnStr.indexOf('(')+1, fnStr.indexOf(')')).match(ARGUMENT_NAMES);
+
+			if(result === null) {
+				result = [];
+			}
+
+			return result;
+		};
+
+	})();
+
+});
+
+},{}],18:[function(require,module,exports){
+module.exports = (function ( ƒ ){
+	var $ = ƒ.Object = ƒ.Object = {};
+
+	// is and isnt
+	$.is = ƒ.is.Object;
+	$.isnt = ƒ.isnt.Object;
+
+	$.forEach = $.each = function ( object, fn, context ) {
+
+		if ( ƒ.isnt.Object( object ) ) {
+			throw new TypeError("object must be an object");
+		}
+		if ( ƒ.isnt.Function( fn ) ) {
+			throw new TypeError("fn must be a function");
+		}
+
+		var i;
+
+		for( i in object ) {
+			if ( object.hasOwnProperty( i ) ) {
+				fn.call( context || object, object[ i ], i, object );
+			}
+		}
+
+		return object;
+	};
+
+	$.map = function ( object, fn, context ) {
+
+		if ( ƒ.isnt.Function( fn ) ) {
+			throw new TypeError("fn must be a function");
+		}
+
+		var res = {}, i;
+
+		ƒ.each( object, function ( v, k ) {
+			res[ k ] = fn.call( context || object, v, k, object );
+		});
+
+		return res;
+	};
+
+	$.filter = function ( object, fn, context ) {
+
+		if ( ƒ.isnt.Object( object ) ) {
+			throw new TypeError("object must be an object");
+		}
+		if ( ƒ.isnt.Function( fn ) ) {
+			throw new TypeError("fn must be a function");
+		}
+
+		var res = {}, i;
+
+		ƒ.each( object, function ( v, k ) {
+			if( fn.call( context || object, v, k, object ) ) {
+				res[ k ] = object[ k ];
+			}
+		});
+
+		return res;
+	};
+
+});
+
+},{}],19:[function(require,module,exports){
+var _ = module.exports = {};
+
+_.A = '[Aa\xaa\xc0-\xc5\xe0-\xe5\u0100-\u0105\u01cd\u01ce\u0200-\u0203\u0226\u0227\u1d2c\u1d43\u1e00\u1e01\u1e9a\u1ea0-\u1ea3\u2090\u2100\u2101\u213b\u249c\u24b6\u24d0\u3371-\u3374\u3380-\u3384\u3388\u3389\u33a9-\u33af\u33c2\u33ca\u33df\u33ff\uff21\uff41]';
+_.B = '[Bb\u1d2e\u1d47\u1e02-\u1e07\u212c\u249d\u24b7\u24d1\u3374\u3385-\u3387\u33c3\u33c8\u33d4\u33dd\uff22\uff42]';
+_.C = '[Cc\xc7\xe7\u0106-\u010d\u1d9c\u2100\u2102\u2103\u2105\u2106\u212d\u216d\u217d\u249e\u24b8\u24d2\u3376\u3388\u3389\u339d\u33a0\u33a4\u33c4-\u33c7\uff23\uff43]';
+_.D = '[Dd\u010e\u010f\u01c4-\u01c6\u01f1-\u01f3\u1d30\u1d48\u1e0a-\u1e13\u2145\u2146\u216e\u217e\u249f\u24b9\u24d3\u32cf\u3372\u3377-\u3379\u3397\u33ad-\u33af\u33c5\u33c8\uff24\uff44]';
+_.E = '[Ee\xc8-\xcb\xe8-\xeb\u0112-\u011b\u0204-\u0207\u0228\u0229\u1d31\u1d49\u1e18-\u1e1b\u1eb8-\u1ebd\u2091\u2121\u212f\u2130\u2147\u24a0\u24ba\u24d4\u3250\u32cd\u32ce\uff25\uff45]';
+_.F = '[Ff\u1da0\u1e1e\u1e1f\u2109\u2131\u213b\u24a1\u24bb\u24d5\u338a-\u338c\u3399\ufb00-\ufb04\uff26\uff46]';
+_.G = '[Gg\u011c-\u0123\u01e6\u01e7\u01f4\u01f5\u1d33\u1d4d\u1e20\u1e21\u210a\u24a2\u24bc\u24d6\u32cc\u32cd\u3387\u338d-\u338f\u3393\u33ac\u33c6\u33c9\u33d2\u33ff\uff27\uff47]';
+_.H = '[Hh\u0124\u0125\u021e\u021f\u02b0\u1d34\u1e22-\u1e2b\u1e96\u210b-\u210e\u24a3\u24bd\u24d7\u32cc\u3371\u3390-\u3394\u33ca\u33cb\u33d7\uff28\uff48]';
+_.I = '[Ii\xcc-\xcf\xec-\xef\u0128-\u0130\u0132\u0133\u01cf\u01d0\u0208-\u020b\u1d35\u1d62\u1e2c\u1e2d\u1ec8-\u1ecb\u2071\u2110\u2111\u2139\u2148\u2160-\u2163\u2165-\u2168\u216a\u216b\u2170-\u2173\u2175-\u2178\u217a\u217b\u24a4\u24be\u24d8\u337a\u33cc\u33d5\ufb01\ufb03\uff29\uff49]';
+_.J = '[Jj\u0132-\u0135\u01c7-\u01cc\u01f0\u02b2\u1d36\u2149\u24a5\u24bf\u24d9\u2c7c\uff2a\uff4a]';
+_.K = '[Kk\u0136\u0137\u01e8\u01e9\u1d37\u1d4f\u1e30-\u1e35\u212a\u24a6\u24c0\u24da\u3384\u3385\u3389\u338f\u3391\u3398\u339e\u33a2\u33a6\u33aa\u33b8\u33be\u33c0\u33c6\u33cd-\u33cf\uff2b\uff4b]';
+_.L = '[Ll\u0139-\u0140\u01c7-\u01c9\u02e1\u1d38\u1e36\u1e37\u1e3a-\u1e3d\u2112\u2113\u2121\u216c\u217c\u24a7\u24c1\u24db\u32cf\u3388\u3389\u33d0-\u33d3\u33d5\u33d6\u33ff\ufb02\ufb04\uff2c\uff4c]';
+_.M = '[Mm\u1d39\u1d50\u1e3e-\u1e43\u2120\u2122\u2133\u216f\u217f\u24a8\u24c2\u24dc\u3377-\u3379\u3383\u3386\u338e\u3392\u3396\u3399-\u33a8\u33ab\u33b3\u33b7\u33b9\u33bd\u33bf\u33c1\u33c2\u33ce\u33d0\u33d4-\u33d6\u33d8\u33d9\u33de\u33df\uff2d\uff4d]';
+_.N = '[Nn\xd1\xf1\u0143-\u0149\u01ca-\u01cc\u01f8\u01f9\u1d3a\u1e44-\u1e4b\u207f\u2115\u2116\u24a9\u24c3\u24dd\u3381\u338b\u339a\u33b1\u33b5\u33bb\u33cc\u33d1\uff2e\uff4e]';
+_.O = '[Oo\xba\xd2-\xd6\xf2-\xf6\u014c-\u0151\u01a0\u01a1\u01d1\u01d2\u01ea\u01eb\u020c-\u020f\u022e\u022f\u1d3c\u1d52\u1ecc-\u1ecf\u2092\u2105\u2116\u2134\u24aa\u24c4\u24de\u3375\u33c7\u33d2\u33d6\uff2f\uff4f]';
+_.P = '[Pp\u1d3e\u1d56\u1e54-\u1e57\u2119\u24ab\u24c5\u24df\u3250\u3371\u3376\u3380\u338a\u33a9-\u33ac\u33b0\u33b4\u33ba\u33cb\u33d7-\u33da\uff30\uff50]';
+_.Q = '[Qq\u211a\u24ac\u24c6\u24e0\u33c3\uff31\uff51]';
+_.R = '[Rr\u0154-\u0159\u0210-\u0213\u02b3\u1d3f\u1d63\u1e58-\u1e5b\u1e5e\u1e5f\u20a8\u211b-\u211d\u24ad\u24c7\u24e1\u32cd\u3374\u33ad-\u33af\u33da\u33db\uff32\uff52]';
+_.S = '[Ss\u015a-\u0161\u017f\u0218\u0219\u02e2\u1e60-\u1e63\u20a8\u2101\u2120\u24ae\u24c8\u24e2\u33a7\u33a8\u33ae-\u33b3\u33db\u33dc\ufb06\uff33\uff53]';
+_.T = '[Tt\u0162-\u0165\u021a\u021b\u1d40\u1d57\u1e6a-\u1e71\u1e97\u2121\u2122\u24af\u24c9\u24e3\u3250\u32cf\u3394\u33cf\ufb05\ufb06\uff34\uff54]';
+_.U = '[Uu\xd9-\xdc\xf9-\xfc\u0168-\u0173\u01af\u01b0\u01d3\u01d4\u0214-\u0217\u1d41\u1d58\u1d64\u1e72-\u1e77\u1ee4-\u1ee7\u2106\u24b0\u24ca\u24e4\u3373\u337a\uff35\uff55]';
+_.V = '[Vv\u1d5b\u1d65\u1e7c-\u1e7f\u2163-\u2167\u2173-\u2177\u24b1\u24cb\u24e5\u2c7d\u32ce\u3375\u33b4-\u33b9\u33dc\u33de\uff36\uff56]';
+_.W = '[Ww\u0174\u0175\u02b7\u1d42\u1e80-\u1e89\u1e98\u24b2\u24cc\u24e6\u33ba-\u33bf\u33dd\uff37\uff57]';
+_.X = '[Xx\u02e3\u1e8a-\u1e8d\u2093\u213b\u2168-\u216b\u2178-\u217b\u24b3\u24cd\u24e7\u33d3\uff38\uff58]';
+_.Y = '[Yy\xdd\xfd\xff\u0176-\u0178\u0232\u0233\u02b8\u1e8e\u1e8f\u1e99\u1ef2-\u1ef9\u24b4\u24ce\u24e8\u33c9\uff39\uff59]';
+_.Z = '[Zz\u0179-\u017e\u01f1-\u01f3\u1dbb\u1e90-\u1e95\u2124\u2128\u24b5\u24cf\u24e9\u3390-\u3394\uff3a\uff5a]';
+
+},{}],20:[function(require,module,exports){
+module.exports = (function ( ƒ ){
+    var rg = ƒ.Regexp = ƒ.regexp = ƒ.RegExp = {};
+
+    // is and isnt
+    rg.is = ƒ.is.RegExp;
+    rg.isnt = ƒ.isnt.RegExp;
+
+    // Load snippets from snippets file
+    rg.accents = require( './accents' );
+    rg.snippets = require( './snippets' );
+
+    rg.builder = function ( snippets, options ) {
+
+        // Check snippets
+        snippets =
+        ƒ.is.Array( snippets ) && snippets ||
+        ƒ.is.String( snippets ) && [ snippets ] ||
+            [];
+
+        // Get options
+        options = ƒ.extend( {}, rg.builder.options, ƒ.is.Object( options ) && options || {} );
+
+        // Get only snippets that are valid
+        snippets = ƒ.filter( snippets, function ( snippet ) {
+            return ƒ.isnt.undefined( rg.snippets[ snippet ] );
+        });
+
+        if( ! snippets.length ) {
+            throw new TypeError("snippets must contain valid snippets, check docs");
+        }
+
+        var r = ƒ.map( snippets, function ( snippet ) {
+            return rg.snippets[ snippet ].toString().replace( /^\//, '' ).replace( /\/$/, '' );
+        }).join('');
+
+        if( options.encapsulate ) r = ( options.negative && '[^' || '[' ) + r +']' + ( options.entire && '*' || '' );
+        if( options.optional ) r = '?('+ r +')';
+        if( options.allowEmpty ) r = '('+ r +'|)';
+        if( options.entire ) r = '^'+ r +'$';
+
+        return new RegExp( r, options.flags || 'gi' );
+    };
+
+        rg.builder.options = {
+            entire: true,
+            encapsulate: true,
+            optional: false,
+            allowEmpty: false,
+            negative: false,
+        };
+
+    rg.test = function ( string, snippets, options ) {
+        var reg = rg.builder( snippets, options );
+
+        if( ! reg ) {
+            return false;
+        }
+
+        return reg.test( string );
+    };
+    rg.match = function ( string, snippets, options ) {
+        var reg = rg.builder( snippets, options );
+
+        if( ! reg ) {
+            return false;
+        }
+
+        return string.match( reg );
+    };
+
+    // TODO: Don't forget to mention on docs how fucking good this fn works!!1
+    rg.querify = function ( string ) {
+
+        // escape meta characters
+        string = string.replace(/([|()[{.+*?^$\\])/g,"\\$1");
+
+        // split into words
+        var words = string.split(/\s+/);
+
+        // sort by length
+        words.sort(function ( a, b ) {
+            return b.length - a.length;
+        });
+
+        // replace characters by their compositors
+        var accent_replacer = function ( chr ) {
+            return rg.accents[ chr.toUpperCase() ] || chr;
+        };
+
+        for ( var i = 0; i < words.length; i++ ) {
+            words[i] = words[i].replace(/\S/g,accent_replacer);
+        }
+
+        // join as alternatives
+        return new RegExp( words.join("|") );
+    };
+
+    rg.filter = function ( regexp, object ) {
+        return ƒ.filter( object, function ( value ) {
+            return ƒ.is.String( value ) && value.match( regexp );
+        });
+    };
+
+});
+
+},{"./accents":19,"./snippets":21}],21:[function(require,module,exports){
+var accents = require( './accents' );
+
+var S = module.exports = {};
+
+// Regex data types on strings
+S.INT = '\\d+';
+S.MD5 = '[0-9a-f]{32}';
+
+// Filters
+S.accented = (function() {
+    var i, r = "";
+
+    for( i in accents )
+        r += accents[ i ].replace(/[\[\]]/ig, '');
+
+    return new RegExp( r );
+})();
+
+S.alpha = /a-zA-Z/;
+S.numeric = /0-9/;
+S.spaced = / /;
+S.doted = /./;
+
+S.brackets = /{}[]()/;
+S.punctuation = /,.!?/;
+S.dividers = /-_\/\\/;
+S.cotters = /\"\'/;
+S.monetaries = /€£$/;
+S.mathematical = /%*\/+-/;
+S.extra = /#@&/;
+
+// Regex content types
+S.url = /((([A-Za-z]{3,9}:(?:\/\/)?)(?:[-;:&=\+\$,\w]+@)?[A-Za-z0-9.-]+(:[0-9]+)?|(?:ww‌​w.|[-;:&=\+\$,\w]+@)[A-Za-z0-9.-]+)((?:\/[\+~%\/.\w-_]*)?\??(?:[-\+=&;%@.\w_]*)#?‌​(?:[\w]*))?)/;
+S.email = /(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))/;
+S.subject_email = new RegExp( '([' + (S.accented+'').replace( /\//ig, '') + ']+ )+<' + (S.email+'').replace( /\//ig, '') + '>' );
+S.ipv4 = /([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])/;
+
+},{"./accents":19}],22:[function(require,module,exports){
+module.exports = (function ( ƒ ){
+	var st = ƒ.String = ƒ.string = {};
+
+	// is and isnt
+	st.is = ƒ.is.String;
+	st.isnt = ƒ.isnt.String;
+
+	st.trim = function ( str ) {
+		return str.trim ? str.trim() : str.replace(/^\s+|\s+$/g, '');
+	};
+
+	st.splitWords = function ( str ) {
+		return st.trim(str).replace(/,/g, ' ').split(/\s+/);
+	};
+
+	st.capitalize = function ( str ) {
+		return str.slice(0,1).toUpperCase() + str.slice(1);
+	};
+
+	st.decapitalize = function ( str ) {
+		return str.slice(0,1).toLowerCase() + str.slice(1);
+	};
+
+	st.smartTrim = function ( str ) {
+		var CODEs = [];
+
+		return str
+			.replace( /(?:<pre[\s\S]*?<\/pre>|<code[\s\S]*?<\/code>)/gi, function ( code ) { CODEs.push( code ); return '__CODE_BLOCK__'; })
+			.replace( /\>[\t\n]+/ig, '>' ).replace( /[\t\n]+\</ig, '<' )
+			.replace( /\>\s+/ig, '> ' ).replace( /\s+\</ig, ' <' )
+			.replace( /\s+/ig, ' ' ).replace( /\>\s+\</ig, '> <' )
+			.trim()
+			.replace( /__CODE_BLOCK__/g, function () { return CODEs.shift(); });
+	};
+
+	// Case conversions
+
+		// from CamelCase to ...
+
+		st.fromCamelToDash = function ( str ){
+			return str
+				.replace(/([A-Z])/g, function ( l ){return "-"+l.toLowerCase();})
+				.replace(/^\-/g,'');
+		};
+		st.fromCamelToUnderscore = function ( str ){
+			return str
+				.replace(/([A-Z])/g, function ( l ){return "_"+l.toLowerCase();})
+				.replace(/^\_/g,'');
+		};
+		st.fromCamelToSpaced = function ( str ){
+			return str
+				.replace(/([A-Z])/g, function ( l ){return " "+l;})
+				.replace(/^ /g,'');
+		};
+
+
+		// from dash-case to ...
+
+		st.fromDashToCamel = function ( str ){
+			return str
+				.replace(/(\-[a-z])/g, function ( l ){return l.toUpperCase().replace('-','');})
+				.replace(/^[a-z]{1}/g,function ( l ){return l.toUpperCase();});
+		};
+		st.fromDashToUnderscore = function ( str ){
+			return str
+				.replace(/(\-[a-z])/g, function ( l ){return l.replace('-','_');})
+				.replace(/^\_/g,'');
+		};
+		st.fromDashToSpaced = function ( str ){
+			return str
+				.replace(/(\-[a-z])/g, function ( l ){return l.toUpperCase().replace('-',' ');})
+				.replace(/^\ /g,'')
+				.replace(/^[a-z]{1}/g,function ( l ){return l.toUpperCase();});
+		};
+
+
+		// from underscore_case to ...
+
+		st.fromUnderscoreToCamel = function ( str ){
+			return str
+				.replace(/(\_[a-z])/g, function ( l ){return l.toUpperCase().replace('_','');})
+				.replace(/^[a-z]{1}/g,function ( l ){return l.toUpperCase();});
+		};
+		st.fromUnderscoreToDash = function ( str ){
+			return str
+				.replace(/(\_[a-z])/g, function ( l ){return l.replace('_','-');})
+				.replace(/^\-/g,'');
+		};
+		st.fromUnderscoreToSpaced = function ( str ){
+			return str
+				.replace(/(\_[a-z])/g, function ( l ){return l.toUpperCase().replace('_',' ');})
+				.replace(/^[a-z]{1}/g,function ( l ){return l.toUpperCase();});
+		};
+
+});
+
+},{}],23:[function(require,module,exports){
 /*!
  * jQuery JavaScript Library v2.1.4
  * http://jquery.com/
@@ -9652,11 +11061,11 @@ return jQuery;
 
 }));
 
-},{}],8:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 
 module.exports = require('./lib/');
 
-},{"./lib/":9}],9:[function(require,module,exports){
+},{"./lib/":25}],25:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -9745,7 +11154,7 @@ exports.connect = lookup;
 exports.Manager = require('./manager');
 exports.Socket = require('./socket');
 
-},{"./manager":10,"./socket":12,"./url":13,"debug":17,"socket.io-parser":53}],10:[function(require,module,exports){
+},{"./manager":26,"./socket":28,"./url":29,"debug":33,"socket.io-parser":69}],26:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -10250,7 +11659,7 @@ Manager.prototype.onreconnect = function(){
   this.emitAll('reconnect', attempt);
 };
 
-},{"./on":11,"./socket":12,"./url":13,"backo2":14,"component-bind":15,"component-emitter":16,"debug":17,"engine.io-client":18,"indexof":49,"object-component":50,"socket.io-parser":53}],11:[function(require,module,exports){
+},{"./on":27,"./socket":28,"./url":29,"backo2":30,"component-bind":31,"component-emitter":32,"debug":33,"engine.io-client":34,"indexof":65,"object-component":66,"socket.io-parser":69}],27:[function(require,module,exports){
 
 /**
  * Module exports.
@@ -10276,7 +11685,7 @@ function on(obj, ev, fn) {
   };
 }
 
-},{}],12:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -10663,7 +12072,7 @@ Socket.prototype.disconnect = function(){
   return this;
 };
 
-},{"./on":11,"component-bind":15,"component-emitter":16,"debug":17,"has-binary":47,"socket.io-parser":53,"to-array":57}],13:[function(require,module,exports){
+},{"./on":27,"component-bind":31,"component-emitter":32,"debug":33,"has-binary":63,"socket.io-parser":69,"to-array":73}],29:[function(require,module,exports){
 (function (global){
 
 /**
@@ -10740,7 +12149,7 @@ function url(uri, loc){
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"debug":17,"parseuri":51}],14:[function(require,module,exports){
+},{"debug":33,"parseuri":67}],30:[function(require,module,exports){
 
 /**
  * Expose `Backoff`.
@@ -10827,7 +12236,7 @@ Backoff.prototype.setJitter = function(jitter){
 };
 
 
-},{}],15:[function(require,module,exports){
+},{}],31:[function(require,module,exports){
 /**
  * Slice reference.
  */
@@ -10852,7 +12261,7 @@ module.exports = function(obj, fn){
   }
 };
 
-},{}],16:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 
 /**
  * Expose `Emitter`.
@@ -11018,7 +12427,7 @@ Emitter.prototype.hasListeners = function(event){
   return !! this.listeners(event).length;
 };
 
-},{}],17:[function(require,module,exports){
+},{}],33:[function(require,module,exports){
 
 /**
  * Expose `debug()` as the module.
@@ -11157,11 +12566,11 @@ try {
   if (window.localStorage) debug.enable(localStorage.debug);
 } catch(e){}
 
-},{}],18:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 
 module.exports =  require('./lib/');
 
-},{"./lib/":19}],19:[function(require,module,exports){
+},{"./lib/":35}],35:[function(require,module,exports){
 
 module.exports = require('./socket');
 
@@ -11173,7 +12582,7 @@ module.exports = require('./socket');
  */
 module.exports.parser = require('engine.io-parser');
 
-},{"./socket":20,"engine.io-parser":32}],20:[function(require,module,exports){
+},{"./socket":36,"engine.io-parser":48}],36:[function(require,module,exports){
 (function (global){
 /**
  * Module dependencies.
@@ -11882,7 +13291,7 @@ Socket.prototype.filterUpgrades = function (upgrades) {
 };
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./transport":21,"./transports":22,"component-emitter":16,"debug":29,"engine.io-parser":32,"indexof":49,"parsejson":43,"parseqs":44,"parseuri":45}],21:[function(require,module,exports){
+},{"./transport":37,"./transports":38,"component-emitter":32,"debug":45,"engine.io-parser":48,"indexof":65,"parsejson":59,"parseqs":60,"parseuri":61}],37:[function(require,module,exports){
 /**
  * Module dependencies.
  */
@@ -12043,7 +13452,7 @@ Transport.prototype.onClose = function () {
   this.emit('close');
 };
 
-},{"component-emitter":16,"engine.io-parser":32}],22:[function(require,module,exports){
+},{"component-emitter":32,"engine.io-parser":48}],38:[function(require,module,exports){
 (function (global){
 /**
  * Module dependencies
@@ -12100,7 +13509,7 @@ function polling(opts){
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./polling-jsonp":23,"./polling-xhr":24,"./websocket":26,"xmlhttprequest":27}],23:[function(require,module,exports){
+},{"./polling-jsonp":39,"./polling-xhr":40,"./websocket":42,"xmlhttprequest":43}],39:[function(require,module,exports){
 (function (global){
 
 /**
@@ -12337,7 +13746,7 @@ JSONPPolling.prototype.doWrite = function (data, fn) {
 };
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./polling":25,"component-inherit":28}],24:[function(require,module,exports){
+},{"./polling":41,"component-inherit":44}],40:[function(require,module,exports){
 (function (global){
 /**
  * Module requirements.
@@ -12725,7 +14134,7 @@ function unloadHandler() {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./polling":25,"component-emitter":16,"component-inherit":28,"debug":29,"xmlhttprequest":27}],25:[function(require,module,exports){
+},{"./polling":41,"component-emitter":32,"component-inherit":44,"debug":45,"xmlhttprequest":43}],41:[function(require,module,exports){
 /**
  * Module dependencies.
  */
@@ -12972,7 +14381,7 @@ Polling.prototype.uri = function(){
   return schema + '://' + this.hostname + port + this.path + query;
 };
 
-},{"../transport":21,"component-inherit":28,"debug":29,"engine.io-parser":32,"parseqs":44,"xmlhttprequest":27}],26:[function(require,module,exports){
+},{"../transport":37,"component-inherit":44,"debug":45,"engine.io-parser":48,"parseqs":60,"xmlhttprequest":43}],42:[function(require,module,exports){
 /**
  * Module dependencies.
  */
@@ -13212,7 +14621,7 @@ WS.prototype.check = function(){
   return !!WebSocket && !('__initialize' in WebSocket && this.name === WS.prototype.name);
 };
 
-},{"../transport":21,"component-inherit":28,"debug":29,"engine.io-parser":32,"parseqs":44,"ws":46}],27:[function(require,module,exports){
+},{"../transport":37,"component-inherit":44,"debug":45,"engine.io-parser":48,"parseqs":60,"ws":62}],43:[function(require,module,exports){
 // browser shim for xmlhttprequest module
 var hasCORS = require('has-cors');
 
@@ -13250,7 +14659,7 @@ module.exports = function(opts) {
   }
 }
 
-},{"has-cors":41}],28:[function(require,module,exports){
+},{"has-cors":57}],44:[function(require,module,exports){
 
 module.exports = function(a, b){
   var fn = function(){};
@@ -13258,7 +14667,7 @@ module.exports = function(a, b){
   a.prototype = new fn;
   a.prototype.constructor = a;
 };
-},{}],29:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 
 /**
  * This is the web browser implementation of `debug()`.
@@ -13407,206 +14816,9 @@ function load() {
 
 exports.enable(load());
 
-},{"./debug":30}],30:[function(require,module,exports){
-
-/**
- * This is the common logic for both the Node.js and web browser
- * implementations of `debug()`.
- *
- * Expose `debug()` as the module.
- */
-
-exports = module.exports = debug;
-exports.coerce = coerce;
-exports.disable = disable;
-exports.enable = enable;
-exports.enabled = enabled;
-exports.humanize = require('ms');
-
-/**
- * The currently active debug mode names, and names to skip.
- */
-
-exports.names = [];
-exports.skips = [];
-
-/**
- * Map of special "%n" handling functions, for the debug "format" argument.
- *
- * Valid key names are a single, lowercased letter, i.e. "n".
- */
-
-exports.formatters = {};
-
-/**
- * Previously assigned color.
- */
-
-var prevColor = 0;
-
-/**
- * Previous log timestamp.
- */
-
-var prevTime;
-
-/**
- * Select a color.
- *
- * @return {Number}
- * @api private
- */
-
-function selectColor() {
-  return exports.colors[prevColor++ % exports.colors.length];
-}
-
-/**
- * Create a debugger with the given `namespace`.
- *
- * @param {String} namespace
- * @return {Function}
- * @api public
- */
-
-function debug(namespace) {
-
-  // define the `disabled` version
-  function disabled() {
-  }
-  disabled.enabled = false;
-
-  // define the `enabled` version
-  function enabled() {
-
-    var self = enabled;
-
-    // set `diff` timestamp
-    var curr = +new Date();
-    var ms = curr - (prevTime || curr);
-    self.diff = ms;
-    self.prev = prevTime;
-    self.curr = curr;
-    prevTime = curr;
-
-    // add the `color` if not set
-    if (null == self.useColors) self.useColors = exports.useColors();
-    if (null == self.color && self.useColors) self.color = selectColor();
-
-    var args = Array.prototype.slice.call(arguments);
-
-    args[0] = exports.coerce(args[0]);
-
-    if ('string' !== typeof args[0]) {
-      // anything else let's inspect with %o
-      args = ['%o'].concat(args);
-    }
-
-    // apply any `formatters` transformations
-    var index = 0;
-    args[0] = args[0].replace(/%([a-z%])/g, function(match, format) {
-      // if we encounter an escaped % then don't increase the array index
-      if (match === '%%') return match;
-      index++;
-      var formatter = exports.formatters[format];
-      if ('function' === typeof formatter) {
-        var val = args[index];
-        match = formatter.call(self, val);
-
-        // now we need to remove `args[index]` since it's inlined in the `format`
-        args.splice(index, 1);
-        index--;
-      }
-      return match;
-    });
-
-    if ('function' === typeof exports.formatArgs) {
-      args = exports.formatArgs.apply(self, args);
-    }
-    var logFn = enabled.log || exports.log || console.log.bind(console);
-    logFn.apply(self, args);
-  }
-  enabled.enabled = true;
-
-  var fn = exports.enabled(namespace) ? enabled : disabled;
-
-  fn.namespace = namespace;
-
-  return fn;
-}
-
-/**
- * Enables a debug mode by namespaces. This can include modes
- * separated by a colon and wildcards.
- *
- * @param {String} namespaces
- * @api public
- */
-
-function enable(namespaces) {
-  exports.save(namespaces);
-
-  var split = (namespaces || '').split(/[\s,]+/);
-  var len = split.length;
-
-  for (var i = 0; i < len; i++) {
-    if (!split[i]) continue; // ignore empty strings
-    namespaces = split[i].replace(/\*/g, '.*?');
-    if (namespaces[0] === '-') {
-      exports.skips.push(new RegExp('^' + namespaces.substr(1) + '$'));
-    } else {
-      exports.names.push(new RegExp('^' + namespaces + '$'));
-    }
-  }
-}
-
-/**
- * Disable debug output.
- *
- * @api public
- */
-
-function disable() {
-  exports.enable('');
-}
-
-/**
- * Returns true if the given mode name is enabled, false otherwise.
- *
- * @param {String} name
- * @return {Boolean}
- * @api public
- */
-
-function enabled(name) {
-  var i, len;
-  for (i = 0, len = exports.skips.length; i < len; i++) {
-    if (exports.skips[i].test(name)) {
-      return false;
-    }
-  }
-  for (i = 0, len = exports.names.length; i < len; i++) {
-    if (exports.names[i].test(name)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Coerce `val`.
- *
- * @param {Mixed} val
- * @return {Mixed}
- * @api private
- */
-
-function coerce(val) {
-  if (val instanceof Error) return val.stack || val.message;
-  return val;
-}
-
-},{"ms":31}],31:[function(require,module,exports){
+},{"./debug":46}],46:[function(require,module,exports){
+arguments[4][8][0].apply(exports,arguments)
+},{"dup":8,"ms":47}],47:[function(require,module,exports){
 /**
  * Helpers.
  */
@@ -13719,7 +14931,7 @@ function plural(ms, n, name) {
   return Math.ceil(ms / n) + ' ' + name + 's';
 }
 
-},{}],32:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 (function (global){
 /**
  * Module dependencies.
@@ -14317,7 +15529,7 @@ exports.decodePayloadAsBinary = function (data, binaryType, callback) {
 };
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./keys":33,"after":34,"arraybuffer.slice":35,"base64-arraybuffer":36,"blob":37,"has-binary":38,"utf8":40}],33:[function(require,module,exports){
+},{"./keys":49,"after":50,"arraybuffer.slice":51,"base64-arraybuffer":52,"blob":53,"has-binary":54,"utf8":56}],49:[function(require,module,exports){
 
 /**
  * Gets the keys for an object.
@@ -14338,7 +15550,7 @@ module.exports = Object.keys || function keys (obj){
   return arr;
 };
 
-},{}],34:[function(require,module,exports){
+},{}],50:[function(require,module,exports){
 module.exports = after
 
 function after(count, callback, err_cb) {
@@ -14368,7 +15580,7 @@ function after(count, callback, err_cb) {
 
 function noop() {}
 
-},{}],35:[function(require,module,exports){
+},{}],51:[function(require,module,exports){
 /**
  * An abstraction for slicing an arraybuffer even when
  * ArrayBuffer.prototype.slice is not supported
@@ -14399,7 +15611,7 @@ module.exports = function(arraybuffer, start, end) {
   return result.buffer;
 };
 
-},{}],36:[function(require,module,exports){
+},{}],52:[function(require,module,exports){
 /*
  * base64-arraybuffer
  * https://github.com/niklasvh/base64-arraybuffer
@@ -14460,7 +15672,7 @@ module.exports = function(arraybuffer, start, end) {
   };
 })("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/");
 
-},{}],37:[function(require,module,exports){
+},{}],53:[function(require,module,exports){
 (function (global){
 /**
  * Create a blob builder even when vendor prefixes exist
@@ -14513,7 +15725,7 @@ module.exports = (function() {
 })();
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],38:[function(require,module,exports){
+},{}],54:[function(require,module,exports){
 (function (global){
 
 /*
@@ -14575,12 +15787,12 @@ function hasBinary(data) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"isarray":39}],39:[function(require,module,exports){
+},{"isarray":55}],55:[function(require,module,exports){
 module.exports = Array.isArray || function (arr) {
   return Object.prototype.toString.call(arr) == '[object Array]';
 };
 
-},{}],40:[function(require,module,exports){
+},{}],56:[function(require,module,exports){
 (function (global){
 /*! http://mths.be/utf8js v2.0.0 by @mathias */
 ;(function(root) {
@@ -14823,7 +16035,7 @@ module.exports = Array.isArray || function (arr) {
 }(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],41:[function(require,module,exports){
+},{}],57:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -14848,7 +16060,7 @@ try {
   module.exports = false;
 }
 
-},{"global":42}],42:[function(require,module,exports){
+},{"global":58}],58:[function(require,module,exports){
 
 /**
  * Returns `this`. Execute this without a "context" (i.e. without it being
@@ -14858,7 +16070,7 @@ try {
 
 module.exports = (function () { return this; })();
 
-},{}],43:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 (function (global){
 /**
  * JSON parse.
@@ -14893,7 +16105,7 @@ module.exports = function parsejson(data) {
   }
 };
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],44:[function(require,module,exports){
+},{}],60:[function(require,module,exports){
 /**
  * Compiles a querystring
  * Returns string representation of the object
@@ -14932,7 +16144,7 @@ exports.decode = function(qs){
   return qry;
 };
 
-},{}],45:[function(require,module,exports){
+},{}],61:[function(require,module,exports){
 /**
  * Parses an URI
  *
@@ -14973,7 +16185,7 @@ module.exports = function parseuri(str) {
     return uri;
 };
 
-},{}],46:[function(require,module,exports){
+},{}],62:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -15018,7 +16230,7 @@ function ws(uri, protocols, opts) {
 
 if (WebSocket) ws.prototype = WebSocket.prototype;
 
-},{}],47:[function(require,module,exports){
+},{}],63:[function(require,module,exports){
 (function (global){
 
 /*
@@ -15080,9 +16292,9 @@ function hasBinary(data) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"isarray":48}],48:[function(require,module,exports){
-arguments[4][39][0].apply(exports,arguments)
-},{"dup":39}],49:[function(require,module,exports){
+},{"isarray":64}],64:[function(require,module,exports){
+arguments[4][55][0].apply(exports,arguments)
+},{"dup":55}],65:[function(require,module,exports){
 
 var indexOf = [].indexOf;
 
@@ -15093,7 +16305,7 @@ module.exports = function(arr, obj){
   }
   return -1;
 };
-},{}],50:[function(require,module,exports){
+},{}],66:[function(require,module,exports){
 
 /**
  * HOP ref.
@@ -15178,7 +16390,7 @@ exports.length = function(obj){
 exports.isEmpty = function(obj){
   return 0 == exports.length(obj);
 };
-},{}],51:[function(require,module,exports){
+},{}],67:[function(require,module,exports){
 /**
  * Parses an URI
  *
@@ -15205,7 +16417,7 @@ module.exports = function parseuri(str) {
   return uri;
 };
 
-},{}],52:[function(require,module,exports){
+},{}],68:[function(require,module,exports){
 (function (global){
 /*global Blob,File*/
 
@@ -15350,7 +16562,7 @@ exports.removeBlobs = function(data, callback) {
 };
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./is-buffer":54,"isarray":55}],53:[function(require,module,exports){
+},{"./is-buffer":70,"isarray":71}],69:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -15752,7 +16964,7 @@ function error(data){
   };
 }
 
-},{"./binary":52,"./is-buffer":54,"component-emitter":16,"debug":17,"isarray":55,"json3":56}],54:[function(require,module,exports){
+},{"./binary":68,"./is-buffer":70,"component-emitter":32,"debug":33,"isarray":71,"json3":72}],70:[function(require,module,exports){
 (function (global){
 
 module.exports = isBuf;
@@ -15769,9 +16981,9 @@ function isBuf(obj) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],55:[function(require,module,exports){
-arguments[4][39][0].apply(exports,arguments)
-},{"dup":39}],56:[function(require,module,exports){
+},{}],71:[function(require,module,exports){
+arguments[4][55][0].apply(exports,arguments)
+},{"dup":55}],72:[function(require,module,exports){
 /*! JSON v3.2.6 | http://bestiejs.github.io/json3 | Copyright 2012-2013, Kit Cambridge | http://kit.mit-license.org */
 ;(function (window) {
   // Convenience aliases.
@@ -16634,7 +17846,7 @@ arguments[4][39][0].apply(exports,arguments)
   }
 }(this));
 
-},{}],57:[function(require,module,exports){
+},{}],73:[function(require,module,exports){
 module.exports = toArray
 
 function toArray(list, index) {
@@ -16649,8 +17861,8 @@ function toArray(list, index) {
     return array
 }
 
-},{}],58:[function(require,module,exports){
+},{}],74:[function(require,module,exports){
 var User = require( './user' );
 var chat = require( './chat' );
 
-},{"./chat":2,"./user":4}]},{},[58]);
+},{"./chat":2,"./user":4}]},{},[74]);
